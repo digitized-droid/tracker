@@ -535,16 +535,34 @@ td strong { font-size:11px; }
           <span class="toggle-copy"><span class="toggle-title">▤ Reports & data</span><span class="toggle-desc">View totals, transaction counts, and export your records.</span></span><span class="toggle-arrow">⌄</span>
         </button>
         <div id="reportsPanel" class="collapsible-content" hidden style="margin-top:18px">
-          <div class="summary-grid compact" aria-label="Financial totals">
-            <div class="summary-card"><span class="summary-icon">↗</span><div class="card-label">Total money received</div><div class="amount" id="totalIncome">₱0.00</div><div class="card-note">All income and added capital</div></div>
-            <div class="summary-card"><span class="summary-icon">↘</span><div class="card-label">Total expenses</div><div class="amount" id="totalExpenses">₱0.00</div><div class="card-note">All recorded purchases and bills</div></div>
+          <div class="report-period-controls no-print">
+            <div class="field" style="margin:0;min-width:145px">
+              <label for="reportPeriod">Report period</label>
+              <select id="reportPeriod">
+                <option value="monthly">Monthly</option>
+                <option value="yearly">Yearly</option>
+              </select>
+            </div>
+            <div class="field" id="reportMonthField" style="margin:0;min-width:170px">
+              <label for="reportMonth">Select month</label>
+              <input id="reportMonth" type="month">
+            </div>
+            <div class="field" id="reportYearField" style="margin:0;min-width:130px" hidden>
+              <label for="reportYear">Select year</label>
+              <input id="reportYear" type="number" min="2000" max="2100" step="1">
+            </div>
+          </div>
+          <div class="report-period-heading" id="reportPeriodHeading">Monthly report</div>
+          <div class="summary-grid compact" aria-label="Financial totals for selected period">
+            <div class="summary-card"><span class="summary-icon">↗</span><div class="card-label">Money received</div><div class="amount" id="totalIncome">₱0.00</div><div class="card-note" id="incomeReportNote">For the selected period</div></div>
+            <div class="summary-card"><span class="summary-icon">↘</span><div class="card-label">Expenses</div><div class="amount" id="totalExpenses">₱0.00</div><div class="card-note" id="expenseReportNote">For the selected period</div></div>
           </div>
           <p class="report-note">Your entries are saved automatically in this browser on this device. Download a CSV report to keep a copy, or print this page to save a simple PDF report.</p>
           <div class="report-actions no-print"><button class="btn btn-primary" id="csvBtn">↓ Download CSV report</button><button class="btn btn-quiet" id="printBtn">▤ Print / Save PDF</button><button class="btn btn-quiet" id="backupBtn">Export backup</button><button class="btn btn-quiet" id="restoreBtn">Import backup</button><input type="file" id="restoreFile" accept="application/json" hidden></div>
           <div style="border-top:1px solid var(--line);margin:18px 0 13px"></div>
-          <div style="display:flex;justify-content:space-between;gap:10px;font-size:11px"><span style="color:var(--muted)">Transactions recorded</span><strong id="transactionCount">0</strong></div>
-          <div style="display:flex;justify-content:space-between;gap:10px;font-size:11px;margin-top:10px"><span style="color:var(--muted)">Items on your list</span><strong id="wishCount">0</strong></div>
-          <div style="display:flex;justify-content:space-between;gap:10px;font-size:11px;margin-top:10px"><span style="color:var(--muted)">Urgent bill reminders</span><strong id="billReportCount">0</strong></div>
+          <div style="display:flex;justify-content:space-between;gap:10px;font-size:11px"><span style="color:var(--muted)">Transactions in this period</span><strong id="transactionCount">0</strong></div>
+          <div style="display:flex;justify-content:space-between;gap:10px;font-size:11px;margin-top:10px"><span style="color:var(--muted)">Current wishlist items</span><strong id="wishCount">0</strong></div>
+          <div style="display:flex;justify-content:space-between;gap:10px;font-size:11px;margin-top:10px"><span style="color:var(--muted)">Current urgent bill reminders</span><strong id="billReportCount">0</strong></div>
           <p class="report-note" style="margin-top:17px">Tip: Export a backup regularly, especially before clearing browser data or changing devices.</p>
         </div>
       </div>
@@ -868,11 +886,37 @@ td strong { font-size:11px; }
   function category(id) { return CATEGORIES.find(c => c.id === id); }
   function total() { return CATEGORIES.reduce((sum,c) => sum + Number(state.balances[c.id] || 0), 0); }
   function sumType(type) { return state.transactions.filter(t => t.type === type).reduce((s,t) => s + Number(t.amount), 0); }
+
+  function getReportPeriod() {
+    const mode = document.getElementById('reportPeriod')?.value || 'monthly';
+    const monthValue = document.getElementById('reportMonth')?.value || today().slice(0,7);
+    const yearValue = String(document.getElementById('reportYear')?.value || new Date().getFullYear());
+    const transactions = state.transactions.filter(t => {
+      if (!t.date) return false;
+      return mode === 'yearly' ? t.date.slice(0,4) === yearValue : t.date.slice(0,7) === monthValue;
+    });
+    const label = mode === 'yearly'
+      ? yearValue
+      : new Date(`${monthValue}-01T12:00:00`).toLocaleDateString('en-PH', {month:'long', year:'numeric'});
+    return { mode, label, transactions };
+  }
+
+  function renderReport() {
+    const report = getReportPeriod();
+    const income = report.transactions.filter(t => t.type === 'income').reduce((sum,t) => sum + Number(t.amount || 0), 0);
+    const expenses = report.transactions.filter(t => t.type === 'expense').reduce((sum,t) => sum + Number(t.amount || 0), 0);
+    document.getElementById('totalIncome').textContent = peso(income);
+    document.getElementById('totalExpenses').textContent = peso(expenses);
+    document.getElementById('transactionCount').textContent = report.transactions.length;
+    document.getElementById('reportPeriodHeading').textContent = `${report.mode === 'yearly' ? 'Yearly' : 'Monthly'} report · ${report.label}`;
+    document.getElementById('incomeReportNote').textContent = `Money received in ${report.label}`;
+    document.getElementById('expenseReportNote').textContent = `Expenses recorded in ${report.label}`;
+    return report;
+  }
+
   function render() {
     document.getElementById('totalBalance').textContent = peso(total());
-    document.getElementById('totalIncome').textContent = peso(sumType('income'));
-    document.getElementById('totalExpenses').textContent = peso(sumType('expense'));
-    document.getElementById('transactionCount').textContent = state.transactions.length;
+    renderReport();
     document.getElementById('wishCount').textContent = state.wishes.length;
     const billReportCount = document.getElementById('billReportCount'); if (billReportCount) billReportCount.textContent = (state.bills || []).length;
     const grid = document.getElementById('categoryGrid');
@@ -1235,21 +1279,58 @@ td strong { font-size:11px; }
   });
   function csvCell(v) { return '"' + String(v ?? '').replace(/"/g,'""') + '"'; }
   document.getElementById('csvBtn').addEventListener('click', () => {
-    const lines = [['PesoPlan Report'],['Generated',new Date().toLocaleString()],[],['CATEGORY BALANCES'],['Category','Allocation','Remaining']];
-    CATEGORIES.forEach(c => lines.push([c.name,c.percent+'%',Number(state.balances[c.id]||0).toFixed(2)]));
-    lines.push([],['SUMMARY'],['Total money received',sumType('income').toFixed(2)],['Total expenses',sumType('expense').toFixed(2)],['Available capital',total().toFixed(2)],[],['TRANSACTIONS'],['Date','Type','Description','Category','Amount']);
-    state.transactions.forEach(t => lines.push([t.date,t.type,t.note || '',t.category ? category(t.category)?.name : 'All categories',t.amount]));
-    lines.push([],['BUY LIST'],['Item','Category','Estimated amount','Priority','Purchased']);
-    state.wishes.forEach(w => lines.push([w.name,category(w.category)?.name,w.amount,w.priority,w.done?'Yes':'No']));
-    lines.push([],['URGENT BILLS'],['Bill','Amount','Due date','Priority','Repeat','Paid','Note']);
-    (state.bills || []).forEach(b => lines.push([b.name,b.amount,b.dueDate,b.priority,b.repeat,b.paid?'Yes':'No',b.note || '']));
-    lines.push([],['BILLS PAID'],['Bill','Amount','Paid date','Repeat']);
-    (state.paidBills || []).forEach(b => lines.push([b.name,b.amount,b.paidAt,b.repeat]));
-    const csv = '\uFEFF' + lines.map(row => row.map(csvCell).join(',')).join('\r\n');
-    downloadBlob(csv,'pesoplan-report-'+today()+'.csv','text/csv;charset=utf-8;'); toast('CSV report downloaded.');
+    const report = renderReport();
+    const periodIncome = report.transactions.filter(t => t.type === 'income').reduce((sum,t) => sum + Number(t.amount || 0), 0);
+    const periodExpenses = report.transactions.filter(t => t.type === 'expense').reduce((sum,t) => sum + Number(t.amount || 0), 0);
+    const lines = [
+      ['PesoPlan ' + (report.mode === 'yearly' ? 'Yearly' : 'Monthly') + ' Report'],
+      ['Period', report.label],
+      ['Generated',new Date().toLocaleString()],
+      [],
+      ['SUMMARY'],
+      ['Money received',periodIncome.toFixed(2)],
+      ['Expenses',periodExpenses.toFixed(2)],
+      ['Net for period',(periodIncome-periodExpenses).toFixed(2)],
+      ['Transaction count',report.transactions.length],
+      [],
+      ['TRANSACTIONS'],
+      ['Date','Type','Description','Category','Amount']
+    ];
+    [...report.transactions].sort((a,b) => a.date.localeCompare(b.date) || (a.createdAt || 0)-(b.createdAt || 0))
+      .forEach(t => lines.push([t.date,t.type,t.note || '',t.category ? category(t.category)?.name : 'All categories',Number(t.amount || 0).toFixed(2)]));
+    const csv = '\\uFEFF' + lines.map(row => row.map(csvCell).join(',')).join('\\r\\n');
+    const filenamePeriod = report.mode === 'yearly' ? report.label : report.label.toLowerCase().replace(/\\s+/g,'-');
+    downloadBlob(csv,`pesoplan-${report.mode}-report-${filenamePeriod}.csv`,'text/csv;charset=utf-8;');
+    toast(`${report.mode === 'yearly' ? 'Yearly' : 'Monthly'} CSV report downloaded.`);
   });
   function downloadBlob(content, filename, type) { const blob = new Blob([content],{type}); const url = URL.createObjectURL(blob); const a = document.createElement('a'); a.href=url; a.download=filename; a.click(); URL.revokeObjectURL(url); }
-  document.getElementById('printBtn').addEventListener('click', () => window.print());
+  document.getElementById('printBtn').addEventListener('click', () => {
+    const report = renderReport();
+    const income = report.transactions.filter(t => t.type === 'income').reduce((sum,t) => sum + Number(t.amount || 0), 0);
+    const expenses = report.transactions.filter(t => t.type === 'expense').reduce((sum,t) => sum + Number(t.amount || 0), 0);
+    const rows = [...report.transactions]
+      .sort((a,b) => a.date.localeCompare(b.date) || (a.createdAt || 0)-(b.createdAt || 0))
+      .map(t => `<tr><td>${escapeHTML(t.date || '')}</td><td>${escapeHTML(t.type || '')}</td><td>${escapeHTML(t.note || '')}</td><td>${escapeHTML(t.category ? category(t.category)?.name || '' : 'All categories')}</td><td>${peso(t.amount)}</td></tr>`).join('');
+    const printWindow = window.open('', '_blank');
+    if (!printWindow) { toast('Please allow pop-ups to print this report.'); return; }
+    printWindow.document.write(`<!DOCTYPE html><html><head><title>PesoPlan ${report.mode} report - ${escapeHTML(report.label)}</title><style>
+      body{font-family:Arial,sans-serif;color:#24332d;padding:28px}h1{margin:0 0 5px;color:#315c4c}
+      .muted{color:#68766e;font-size:12px}.totals{display:flex;gap:30px;margin:24px 0}
+      .total{padding:14px;border:1px solid #dfe5dc;border-radius:10px;min-width:180px}
+      .total small{display:block;color:#68766e;text-transform:uppercase;font-size:10px}
+      .total strong{display:block;font-size:22px;margin-top:7px}
+      table{width:100%;border-collapse:collapse;margin-top:18px}th,td{text-align:left;padding:9px;border-bottom:1px solid #dfe5dc;font-size:11px}
+      th{font-size:9px;text-transform:uppercase;color:#68766e}
+      @media print{body{padding:0}}
+    </style></head><body><h1>PesoPlan</h1><div class="muted">${report.mode === 'yearly' ? 'Yearly' : 'Monthly'} report · ${escapeHTML(report.label)}</div>
+      <div class="totals"><div class="total"><small>Money received</small><strong>${peso(income)}</strong></div><div class="total"><small>Expenses</small><strong>${peso(expenses)}</strong></div><div class="total"><small>Net for period</small><strong>${peso(income-expenses)}</strong></div></div>
+      <p class="muted">${report.transactions.length} transactions · Generated ${new Date().toLocaleString()}</p>
+      <h2>Transactions</h2><table><thead><tr><th>Date</th><th>Type</th><th>Description</th><th>Category</th><th>Amount</th></tr></thead><tbody>${rows || '<tr><td colspan="5">No transactions recorded for this period.</td></tr>'}</tbody></table>
+      </body></html>`);
+    printWindow.document.close();
+    printWindow.focus();
+    printWindow.print();
+  });
   document.getElementById('backupBtn').addEventListener('click', () => { downloadBlob(JSON.stringify({app:'PesoPlan',version:1,exportedAt:new Date().toISOString(),...state,bills:state.bills || []},null,2),'pesoplan-backup-'+today()+'.json','application/json'); toast('Backup exported.'); });
   document.getElementById('restoreBtn').addEventListener('click', () => document.getElementById('restoreFile').click());
   document.getElementById('restoreFile').addEventListener('change', async e => {
@@ -1264,6 +1345,16 @@ td strong { font-size:11px; }
   });
   document.getElementById('todayLabel').textContent = new Date().toLocaleDateString('en-PH',{weekday:'long',month:'long',day:'numeric',year:'numeric'});
   document.getElementById('incomeDate').value = today(); document.getElementById('expenseDate').value = today();
+  document.getElementById('reportMonth').value = today().slice(0,7);
+  document.getElementById('reportYear').value = new Date().getFullYear();
+  document.getElementById('reportPeriod').addEventListener('change', () => {
+    const yearly = document.getElementById('reportPeriod').value === 'yearly';
+    document.getElementById('reportMonthField').hidden = yearly;
+    document.getElementById('reportYearField').hidden = !yearly;
+    renderReport();
+  });
+  document.getElementById('reportMonth').addEventListener('change', renderReport);
+  document.getElementById('reportYear').addEventListener('change', renderReport);
   initSelects(); render();
   initializeCloud();
 })();
